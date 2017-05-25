@@ -22,11 +22,15 @@ import org.apache.http.ParseException;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.ResponseHandler;
 import org.apache.http.client.methods.HttpGet;
+import org.apache.http.client.protocol.HttpClientContext;
+import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
+import org.apache.http.protocol.HttpContext;
 import org.apache.http.util.EntityUtils;
 
 import java.io.IOException;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Created by ceposta 
@@ -70,17 +74,24 @@ class SenderThread implements Runnable {
     public static final String urlUnderTestDefault = "http://localhost:15001/get";
 
     public static final String mixResponseTimesEnvVar = "MIX_RESPONSE_TIMES";
-    public static final String mixResponseTimesDefault = "false";
+    public static final boolean mixResponseTimesDefault = false;
 
-    private int numCalls;
+    public static final String parallelSendsEnvVar = "PARALLEL_SENDS";
+    public static final boolean parallelSendsDefault = false;
 
-    HttpClient client = HttpClients.createDefault();
-    HttpGet request;
+    public static final String parallelSendsBatchEnvVar = "PARALLEL_SENDS_BATCH";
+    public static final int parallelSendsBatchDefault = 5;
+
+    final int numCalls;
+
+    final CloseableHttpClient client = HttpClients.createDefault();
     String[] responses;
-    int failures = 0;
+    final AtomicInteger failures = new AtomicInteger(0);
     final long delayBetweenCalls;
-    String url;
-    boolean mixedRespTimes;
+    final String url;
+    final boolean mixedRespTimes;
+    final boolean parallelSends;
+    final int parallelSendsBatch;
 
     public SenderThread() {
         delayBetweenCalls = System.getenv().keySet().contains(delayBetweenCallsEnvVar) ? Integer.valueOf(System.getenv(delayBetweenCallsEnvVar)) :
@@ -92,10 +103,14 @@ class SenderThread implements Runnable {
         responses = new String[numCalls];
 
         url = System.getenv().keySet().contains(urlUnderTestEnvVar) ? System.getenv(urlUnderTestEnvVar) : urlUnderTestDefault;
-        request = new HttpGet(url);
 
-        String respTimeStr = System.getenv().keySet().contains(mixResponseTimesEnvVar) ? System.getenv(mixResponseTimesEnvVar) : mixResponseTimesDefault;
-        mixedRespTimes = Boolean.valueOf(respTimeStr);
+        mixedRespTimes = System.getenv().keySet().contains(mixResponseTimesEnvVar) ?
+                Boolean.valueOf(System.getenv(mixResponseTimesEnvVar)) : mixResponseTimesDefault;
+
+        parallelSends = System.getenv().keySet().contains(parallelSendsEnvVar) ?
+                Boolean.valueOf(System.getenv(parallelSendsEnvVar)) : parallelSendsDefault;
+        parallelSendsBatch = System.getenv().keySet().contains(parallelSendsBatchEnvVar) ?
+                Integer.valueOf(System.getenv(parallelSendsBatchEnvVar)) : parallelSendsBatchDefault;
 
     }
 
@@ -104,38 +119,82 @@ class SenderThread implements Runnable {
         String threadName = Thread.currentThread().getName();
 
         System.out.println("Starting " + threadName + " with numCalls=" + numCalls +
+                " parallelSends=" + parallelSends +
         " delayBetweenCalls="+delayBetweenCalls + " url="+url+" mixedRespTimes="+mixedRespTimes);
 
         long start = System.currentTimeMillis();
 
-        for (int i = 0; i < numCalls; i++) {
-            delay();
-            executeRequest(i);
+
+        if (parallelSends) {
+            Future[] waitForSends;
+            final ExecutorService parallelSender = Executors.newFixedThreadPool(parallelSendsBatch);
+
+            // do in parallel batches
+            for (int i = 0; i < numCalls; i += parallelSendsBatch) {
+                waitForSends = new Future[parallelSendsBatch];
+                for (int j = 0; j < parallelSendsBatch; j++) {
+                    final int index = i+j;
+
+                    waitForSends[j] = parallelSender.submit(new Runnable() {
+                        @Override
+                        public void run() {
+                            executeRequest(index, url);
+                        }
+                    });
+
+                }
+                for (int k = 0; k < parallelSendsBatch; k++) {
+                    try {
+                        waitForSends[k].get();
+                    } catch (Exception e){}
+                }
+                System.out.println("finished batch " + i);
+            }
+
+            parallelSender.shutdown();
+
+        }else {
+            // do sequential
+            for (int i = 0; i < numCalls; i++) {
+                delay();
+                executeRequest(i, url);
+            }
         }
+
         long duration = System.currentTimeMillis() - start;
 
-        System.out.println(threadName + ": successes=[" + (numCalls-failures) + "], failures=[" + failures + "], duration=[" + duration + "ms]");
+        System.out.println(threadName + ": successes=[" + (numCalls-failures.get()) + "], failures=[" + failures + "], duration=[" + duration + "ms]");
+
+        try {
+            client.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
 
     }
 
-    private void executeRequest(int i) {
+    private void executeRequest(int i, String url) {
+        HttpGet request;
+        HttpContext context = HttpClientContext.create();
         try {
             if (mixedRespTimes) {
                 request = new HttpGet("http://localhost:15001/delay/" + randoDelay());
+            } else {
+                request = new HttpGet(url);
             }
-            responses[i] = client.execute(request, new StringResponseHandler());
+            responses[i] = client.execute(request,  new StringResponseHandler(), context);
             if (responses[i].toLowerCase().contains("unexpected")) {
-                failures++;
+                failures.incrementAndGet();
             }
         } catch (IOException e) {
             e.printStackTrace();
             responses[i] = "had an error";
-            failures++;
+            failures.incrementAndGet();
         }
     }
 
     private int randoDelay() {
-        int delay = ThreadLocalRandom.current().nextInt(0, 6);
+        int delay = ThreadLocalRandom.current().nextInt(0, 5);
         System.out.println(Thread.currentThread().getName() + ": using delay of : "  + delay);
         return delay;
 
