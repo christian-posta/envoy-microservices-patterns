@@ -427,7 +427,132 @@ Some things to keep in mind about retries:
 
 ### Running the timeouts demo
 
-TBD
+For the timeouts demo, we'll be configuring our routing in Envoy like this:
+
+```bash
+  "routes": [
+    {
+      "timeout_ms": 0,
+      "prefix": "/",
+      "auto_host_rewrite": true,
+      "cluster": "httpbin_service",
+      "timeout_ms": 3000
+    }
+```
+
+This configuration is setting a global (ie, includes all retries) 3s timeout for any calls made through this route to the `httpbin_service` cluster.
+
+If you've run previous demos, please make sure to get a clean start for this (or any) demo. We have different Envoy configurations for each demo and want to make sure we start from a clean slate each time.
+
+First stop any existing demos:
+
+```bash
+./docker-stop.sh
+```
+
+Now let's get our `timeouts` demo up:
+
+```bash
+./docker-run.sh -d timeouts
+```
+
+Now let's exercise the client with a *single* call which will hit an HTTP endpoint that should delay the response by about 5s. This delay should be enough to trigger the envoy timeout. We'll use the `curl.sh` script which is set up to call curl inside our demo container. 
+
+```bash
+./curl.sh -vvvv localhost:15001/delay/5
+```
+
+We should see output similar to this:
+
+```bash
+* Hostname was NOT found in DNS cache
+*   Trying ::1...
+* connect to ::1 port 15001 failed: Connection refused
+*   Trying 127.0.0.1...
+* Connected to localhost (127.0.0.1) port 15001 (#0)
+> GET /delay/5 HTTP/1.1
+> User-Agent: curl/7.35.0
+> Host: localhost:15001
+> Accept: */*
+> 
+< HTTP/1.1 504 Gateway Timeout
+< content-length: 24
+< content-type: text/plain
+< date: Thu, 25 May 2017 06:13:53 GMT
+* Server envoy is not blacklisted
+< server: envoy
+< 
+* Connection #0 to host localhost left intact
+upstream request timeout
+```
+
+We see that our request was timed out!
+
+Let's check the Envoy stats:
+
+```bash
+./get-envoy-stats.sh | grep timeout
+```
+
+Here we see 1 request (the one we sent in!) was timed out by Envoy.
+
+```bash
+cluster.httpbin_service.upstream_cx_connect_timeout: 0
+cluster.httpbin_service.upstream_rq_per_try_timeout: 0
+cluster.httpbin_service.upstream_rq_timeout: 1
+http.admin.downstream_cx_idle_timeout: 0
+http.egress_http.downstream_cx_idle_timeout: 0
+```
+
+If we send the request in, this time with a smaller delay, we should see the call go through:
+
+```bash
+./curl.sh -vvvv localhost:15001/delay/2
+```
+
+```bash
+* Hostname was NOT found in DNS cache
+*   Trying ::1...
+* connect to ::1 port 15001 failed: Connection refused
+*   Trying 127.0.0.1...
+* Connected to localhost (127.0.0.1) port 15001 (#0)
+> GET /delay/2 HTTP/1.1
+> User-Agent: curl/7.35.0
+> Host: localhost:15001
+> Accept: */*
+> 
+< HTTP/1.1 200 OK
+* Server envoy is not blacklisted
+< server: envoy
+< date: Thu, 25 May 2017 06:15:41 GMT
+< content-type: application/json
+< access-control-allow-origin: *
+< access-control-allow-credentials: true
+< x-powered-by: Flask
+< x-processed-time: 2.00246119499
+< content-length: 309
+< via: 1.1 vegur
+< x-envoy-upstream-service-time: 2145
+< 
+{
+  "args": {}, 
+  "data": "", 
+  "files": {}, 
+  "form": {}, 
+  "headers": {
+    "Accept": "*/*", 
+    "Connection": "close", 
+    "Host": "httpbin.org", 
+    "User-Agent": "curl/7.35.0", 
+    "X-Envoy-Expected-Rq-Timeout-Ms": "3000"
+  }, 
+  "origin": "68.3.84.124", 
+  "url": "http://httpbin.org/delay/2"
+}
+* Connection #0 to host localhost left intact
+```
+
+Also note that Envoy propagates the timeout headers so that upstream services have an idea about what to expect.
 
 ### Running the tracing demo
 
