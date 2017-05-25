@@ -70,7 +70,7 @@
         "outlier_detection" : {
           "consecutive_5xx": 5,
           "max_ejection_percent": 100,
-          "interval_ms": 3
+          "interval_ms": 3000
         }
       }
 
