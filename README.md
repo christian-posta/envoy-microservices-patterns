@@ -74,7 +74,7 @@ To run the `circuit-breaker` demo:
 
 The Envoy configuration for circuit breakers looks like this (see the [full configuration here](./circuit-breaker/conf/envoy.json)):
 
-```xml
+```json
 "circuit_breakers": {
   "default": {
     "max_connections": 1,
@@ -104,7 +104,7 @@ Let's see what envoy does when too many threads in an application try to make to
 
 Recall our circuit breaking settings for our upstream `httbin` cluster looks like this (see the [full configuration here](./circuit-breaker/conf/envoy.json)):
 
-```xml
+```json
 "circuit_breakers": {
   "default": {
     "max_connections": 1,
@@ -224,7 +224,7 @@ Let's run some similar tests to exercise the `max_pending_requests` setting.
 
 Recall our circuit breaking settings for our upstream `httbin` cluster looks like this (see the [full configuration here](./circuit-breaker/conf/envoy.json)):
 
-```xml
+```json
 "circuit_breakers": {
   "default": {
     "max_connections": 1,
@@ -337,7 +337,7 @@ We can see we tripped the consecutive 5xx detection! We've also removed that hos
 
 For the retries demo, we'll be configuring our routing in Envoy like this:
 
-```bash
+```json
   "routes": [
     {
       "timeout_ms": 0,
@@ -429,7 +429,7 @@ Some things to keep in mind about retries:
 
 For the timeouts demo, we'll be configuring our routing in Envoy like this:
 
-```bash
+```json
   "routes": [
     {
       "timeout_ms": 0,
@@ -556,4 +556,118 @@ Also note that Envoy propagates the timeout headers so that upstream services ha
 
 ### Running the tracing demo
 
-TBD
+For the tracing demo, we'll be configuring our Envoy with the following salient config ([see the full config for the rest of the context](./tracing/conf/envoy.json):
+
+```json
+    "tracing": {
+      "operation_name": "egress"
+    },
+    
+    ...
+    
+      "tracing": {
+        "http": {
+          "driver": {
+            "type": "zipkin",
+            "config": {
+              "collector_cluster": "zipkin",
+              "collector_endpoint": "/api/v1/spans"
+            }
+          }
+        }
+      },
+      
+      ...
+      
+       {
+          "name": "zipkin",
+          "connect_timeout_ms": 1000,
+          "type": "strict_dns",
+          "lb_type": "round_robin",
+          "hosts": [
+            {
+              "url": "tcp://zipkin:9411"
+            }
+          ]
+        }
+    
+```
+
+Here we're configuring our tracing driver and tracing cluster. In this case, to run this demo, we'll need to start up a Zipkin server:
+
+First stop any existing demos:
+
+```bash
+./docker-stop.sh
+```
+
+Then bootstrap our zipkin server:
+
+```bash
+./tracing/docker-run-zipkin.sh
+```
+
+This will expose zipkin onto ports `9411`. If you're using minikube or something similar to run these demos, you can directly export the minikube port to your host like this:
+ 
+```bash
+./port-forward-minikube.sh 9411
+``` 
+
+Check out that command to port it to whatever your docker host may look like. Once you've gotten Zipkin up and running, navigate to the service (ie, on minikube, after doing the port forwarding, it would just be http://localhost:9411). You should see Zipkin:
+
+![zipkin](./images/zipkin.png)
+
+Now that we've got our zipkin server up, let's start up our `tracing` demo:
+
+```bash
+./docker-run.sh -d tracing
+```
+
+Let's send some traffic through our client:
+
+```bash
+./curl.sh -vvvv localhost:15001/get
+```
+
+We should get a response that looks like this:
+
+```bash
+< HTTP/1.1 200 OK
+* Server envoy is not blacklisted
+< server: envoy
+< date: Thu, 25 May 2017 06:31:02 GMT
+< content-type: application/json
+< access-control-allow-origin: *
+< access-control-allow-credentials: true
+< x-powered-by: Flask
+< x-processed-time: 0.000982999801636
+< content-length: 402
+< via: 1.1 vegur
+< x-envoy-upstream-service-time: 142
+< 
+{
+  "args": {}, 
+  "headers": {
+    "Accept": "*/*", 
+    "Connection": "close", 
+    "Host": "httpbin.org", 
+    "User-Agent": "curl/7.35.0", 
+    "X-B3-Sampled": "1", 
+    "X-B3-Spanid": "0000b825f82b418d", 
+    "X-B3-Traceid": "0000b825f82b418d", 
+    "X-Ot-Span-Context": "0000b825f82b418d;0000b825f82b418d;0000000000000000;cs"
+  }, 
+  "origin": "68.3.84.124", 
+  "url": "http://httpbin.org/get"
+}
+```
+
+Now if we go to our Zipkin server, we should see a single span/trace for this call (note, you may have to adjust the start/stop times in the zipkin filter:
+
+![zipkin](./images/zipkin-trace.png)
+
+Here we have a single trace that has a single span (which is what we expect since our demo client which has Envoy is talking directly to an external service that does not have Envoy... if the upstream service also had Envoy with zipkin enabled, we'd see the full set of spans between services)
+
+If we click into the span to see more detail, we'd see something like this:
+
+![zipkin](./images/zipkin-detail.png)

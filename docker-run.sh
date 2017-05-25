@@ -7,7 +7,7 @@ while getopts d:z: opt; do
   d)
       demo=$OPTARG
       if [[ "$demo" == "tracing" ]]; then
-        link="--link zipkin --link httpbin"
+        link="--link zipkin"
       fi
       ;;
   z)

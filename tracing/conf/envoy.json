@@ -71,7 +71,7 @@
         "lb_type": "round_robin",
         "hosts": [
           {
-            "url": "tcp://httpbin:8000"
+            "url": "tcp://httpbin.org:80"
           }
         ]
       },
