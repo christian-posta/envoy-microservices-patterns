@@ -320,6 +320,10 @@ pool-1-thread-1: successes=[0], failures=[10], duration=[929ms]
 Let's now check the Envoy stats to see what happened exactly:
 
 ```bash
+./get-envoy-stats.sh | grep cluster.httpbin_service | grep outlier
+```
+
+```bash
 cluster.httpbin_service.outlier_detection.ejections_active: 0
 cluster.httpbin_service.outlier_detection.ejections_consecutive_5xx: 1
 cluster.httpbin_service.outlier_detection.ejections_overflow: 0
@@ -331,7 +335,95 @@ We can see we tripped the consecutive 5xx detection! We've also removed that hos
 
 ### Running the retries demo
 
-TBD
+For the retries demo, we'll be configuring our routing in Envoy like this:
+
+```bash
+  "routes": [
+    {
+      "timeout_ms": 0,
+      "prefix": "/",
+      "auto_host_rewrite": true,
+      "cluster": "httpbin_service",
+      "retry_policy": {
+        "retry_on": "5xx",
+        "num_retries": 3
+      }
+
+    }
+```
+
+Here we're saying to retry up to 3 times on HTTP status of 5xx.
+
+If you've run previous demos, please make sure to get a clean start for this (or any) demo. We have different Envoy configurations for each demo and want to make sure we start from a clean slate each time.
+
+First stop any existing demos:
+
+```bash
+./docker-stop.sh
+```
+
+Now let's get our `retries` demo up:
+
+```bash
+./docker-run.sh -d retries
+```
+
+Now let's exercise the client with a *single* call which will hit an HTTP endpoint that should return an HTTP `500` error. We'll use the `curl.sh` script which is set up to call curl inside our demo container. 
+
+```bash
+./curl.sh -vvvv localhost:15001/status/500
+```
+
+We should see something like this:
+
+```bash
+* Hostname was NOT found in DNS cache
+*   Trying ::1...
+* connect to ::1 port 15001 failed: Connection refused
+*   Trying 127.0.0.1...
+* Connected to localhost (127.0.0.1) port 15001 (#0)
+> GET /status/500 HTTP/1.1
+> User-Agent: curl/7.35.0
+> Host: localhost:15001
+> Accept: */*
+> 
+< HTTP/1.1 500 Internal Server Error
+* Server envoy is not blacklisted
+< server: envoy
+< date: Thu, 25 May 2017 05:55:37 GMT
+< content-type: text/html; charset=utf-8
+< access-control-allow-origin: *
+< access-control-allow-credentials: true
+< x-powered-by: Flask
+< x-processed-time: 0.000718116760254
+< content-length: 0
+< via: 1.1 vegur
+< x-envoy-upstream-service-time: 684
+< 
+* Connection #0 to host localhost left intact
+```
+
+Great! Now, let's check what Envoy has done for us:
+
+```bash
+./get-envoy-stats.sh | grep retry
+```
+
+```bash
+cluster.httpbin_service.retry.upstream_rq_500: 3
+cluster.httpbin_service.retry.upstream_rq_5xx: 3
+cluster.httpbin_service.upstream_rq_retry: 3
+cluster.httpbin_service.upstream_rq_retry_overflow: 0
+cluster.httpbin_service.upstream_rq_retry_success: 0
+```
+
+Yay! We see here that envoy has retried 3 times because of HTTP `500` errors.
+
+Some things to keep in mind about retries:
+
+* Envoy will do automatic exponential retry with jittering. See [the docs for more](https://lyft.github.io/envoy/docs/configuration/http_filters/router_filter.html)
+* You can set retry timeouts (timeout for each retry), but the overall route timeout (configured for the routing table; see the `timeouts` demo for the exact configuration) will still hold/apply; this is to short circuit any run away retry/exponential backoff 
+* You should always set the circuit breaker retry configuration to limit the amount of quota for retries when you may have large numbers of connections. See the [active retries in the circuit breaker section in the Envoy documentation](https://lyft.github.io/envoy/docs/intro/arch_overview/circuit_breaking.html#arch-overview-circuit-break)
 
 ### Running the timeouts demo
 
