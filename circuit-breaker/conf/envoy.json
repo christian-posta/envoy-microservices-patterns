@@ -1,0 +1,79 @@
+{
+  "listeners": [
+
+    {
+      "address": "tcp://0.0.0.0:15001",
+      "filters": [
+        {
+          "type": "read",
+          "name": "http_connection_manager",
+          "config": {
+            "codec_type": "auto",
+            "stat_prefix": "egress_http",
+            "access_log": [
+              {
+                "path": "/tmp/envoy-traffic"
+              }
+            ],
+            "generate_request_id": true,
+            "route_config": {
+              "virtual_hosts": [
+                {
+                  "name": "service",
+                  "domains": ["*"],
+                  "routes": [
+                    {
+                      "timeout_ms": 0,
+                      "prefix": "/",
+                      "auto_host_rewrite": true,
+                      "cluster": "httpbin_service"
+                    }
+                  ]
+                }
+              ]
+            },
+            "filters": [
+              {
+                "type": "decoder",
+                "name": "router",
+                "config": {}
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "admin": {
+    "access_log_path": "/tmp/envoy-admin",
+    "address": "tcp://127.0.0.1:15000"
+  },
+  "cluster_manager": {
+    "clusters": [
+      {
+        "name": "httpbin_service",
+        "connect_timeout_ms": 250,
+        "type": "logical_dns",
+        "lb_type": "round_robin",
+        "hosts": [
+          {
+            "url": "tcp://httpbin.org:80"
+          }
+        ],
+        "circuit_breakers": {
+          "default": {
+            "max_connections": 1,
+            "max_pending_requests": 1,
+            "max_retries": 3
+          }
+        },
+        "outlier_detection" : {
+          "consecutive_5xx": 5,
+          "max_ejection_percent": 100,
+          "interval_ms": 3
+        }
+      }
+
+    ]
+  }
+}
