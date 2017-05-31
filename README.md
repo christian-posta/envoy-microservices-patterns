@@ -41,7 +41,7 @@ The other various scripts allow us to run the http client (which will be proxied
 
 * `run-http-client.sh` - runs the Java http client using environment variables specified for each demo (in each dir's `http-client.env` file
 * `curl.sh` - executes a single `curl` command inside the http-client+envoy container; useful for tests that just need a single (or couple) http calls
-* `get-envoy-stat.sh` - queries the Envoy Proxy's admin site for statistics that we can use to interrogate the behavior of the demo and verify it 
+* `get-envoy-stats.sh` - queries the Envoy Proxy's admin site for statistics that we can use to interrogate the behavior of the demo and verify it 
 * `reset-envoy-stat.sh` - useful for resetting the Envoy Proxy's statistics to re-run some demos/test cases
 * `port-forward-minikube.sh` useful if using minikube to expose ports locally on your host
 
