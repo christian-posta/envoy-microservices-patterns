@@ -1,0 +1,64 @@
+{
+  "listeners": [
+    {
+      "address": "tcp://0.0.0.0:15001",
+      "filters": [
+        {
+          "type": "read",
+          "name": "http_connection_manager",
+          "config": {
+            "codec_type": "auto",
+            "stat_prefix": "egress_http",
+            "access_log": [
+              {
+                "path": "/tmp/envoy-traffic"
+              }
+            ],
+            "generate_request_id": true,
+            "route_config": {
+              "virtual_hosts": [
+                {
+                  "name": "service",
+                  "domains": ["*"],
+                  "routes": [
+                    {
+                      "timeout_ms": 0,
+                      "prefix": "/",
+                      "cluster": "transparent_redirect",
+                      "retry_policy": {
+                        "retry_on": "5xx",
+                        "num_retries": 3
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            "filters": [
+              {
+                "type": "decoder",
+                "name": "router",
+                "config": {}
+              }
+            ]
+          }
+        }
+      ],
+      "use_original_dst": true
+    }
+  ],
+  "cluster_manager": {
+    "clusters": [
+      {
+        "name": "transparent_redirect",
+        "connect_timeout_ms": 250,
+        "type": "original_dst",
+        "lb_type": "original_dst_lb"
+      }
+    ]
+  },
+  "admin": {
+    "access_log_path": "/tmp/envoy-admin",
+    "address": "tcp://127.0.0.1:15000"
+  }
+}
