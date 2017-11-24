@@ -51,7 +51,7 @@
     "clusters": [
       {
         "name": "transparent_redirect",
-        "connect_timeout_ms": 250,
+        "connect_timeout_ms": 5000,
         "type": "original_dst",
         "lb_type": "original_dst_lb"
       }
