@@ -26,10 +26,7 @@
                       "timeout_ms": 0,
                       "prefix": "/",
                       "auto_host_rewrite": true,
-                      "cluster": "httpbin_service",
-                      "shadow": {
-                        "cluster": "httpbin_2"
-                      }
+                      "cluster": "httpbin_service"
                     }
                   ]
                 }
@@ -51,19 +48,12 @@
     "access_log_path": "/tmp/envoy-admin",
     "address": "tcp://127.0.0.1:15000"
   },
+  "runtime": {
+    "symlink_root": "/srv/runtime/current",
+    "subdirectory": "envoy"
+  },
   "cluster_manager": {
     "clusters": [
-      {
-        "name": "httpbin_2",
-        "connect_timeout_ms": 5000,
-        "type": "static",
-        "lb_type": "round_robin",
-        "hosts": [
-          {
-            "url": "tcp://172.17.0.9:8080"
-          }
-        ]
-      },
       {
         "name": "httpbin_service",
         "connect_timeout_ms": 5000,
@@ -71,9 +61,24 @@
         "lb_type": "round_robin",
         "hosts": [
           {
-            "url": "tcp://172.17.0.8:8080"
+            "url": "tcp://172.17.0.6:8080"
+          },{
+            "url": "tcp://172.17.0.7:8080"
           }
-        ]
+        ],
+        "circuit_breakers": {
+          "default": {
+            "max_connections": 1,
+            "max_pending_requests": 1,
+            "max_retries": 3
+          }
+        },
+        "outlier_detection" : {
+          "consecutive_5xx": 1,
+          "max_ejection_percent": 100,
+          "interval_ms": 1000,
+          "base_ejection_time_ms": 60000
+        }
       }
     ],
     "outlier_detection": {

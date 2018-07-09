@@ -1,5 +1,5 @@
 
-FROM lyft/envoy:1.3.0
+FROM envoyproxy/envoy:61a9741c3ae9b021b035ce810ab64c6a8f68ba18
 
 MAINTAINER Christian Posta <christian.posta@gmail.com>
 
