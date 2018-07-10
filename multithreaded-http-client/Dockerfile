@@ -1,5 +1,5 @@
 
-FROM envoyproxy/envoy:61a9741c3ae9b021b035ce810ab64c6a8f68ba18
+FROM envoyproxy/envoy:v1.7.0
 
 MAINTAINER Christian Posta <christian.posta@gmail.com>
 
